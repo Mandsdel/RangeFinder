@@ -3,13 +3,11 @@ local _, RangeFinder = ...
 local Core = {}
 RangeFinder.Core = Core
 
--- The adapter is deliberately injected until the Forever integrations are verified.
 function Core.New(adapter, saved)
     assert(type(saved) == "table", "RangeFinder saved settings must be a table")
     local controller = {
         adapter = adapter,
         measurement = nil,
-        preview = false,
         hasTarget = false,
         elapsed = 0,
         initialized = false,
@@ -17,11 +15,10 @@ function Core.New(adapter, saved)
 
     controller.display = RangeFinder.Display.New(adapter.view)
     controller.options = RangeFinder.Options.New(saved, controller.display, adapter.diagnostic)
-    controller.editMode = RangeFinder.EditMode.New(controller)
 
     function controller:Render()
         self.display:SetVisible(self.hasTarget)
-        self.display:Render(self.measurement, self.preview)
+        self.display:Render(self.measurement)
     end
 
     function controller:Refresh()
@@ -53,18 +50,6 @@ function Core.New(adapter, saved)
         if self.elapsed >= 0.1 then
             self.elapsed = 0
             self:Refresh()
-        end
-    end
-
-    function controller:SetPreview(enabled)
-        if self.preview == enabled then
-            return
-        end
-        self.preview = enabled
-        if enabled then
-            self:Render()
-        else
-            self:OnTargetChanged()
         end
     end
 

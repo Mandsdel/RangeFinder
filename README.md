@@ -1,116 +1,94 @@
 # RangeFinder
 
-RangeFinder is a World of Warcraft Forever addon that displays the current
-target's checked distance when the client provides one, or a clearly labeled
-approximate range bracket from interaction and learned-spell range checks.
+RangeFinder is a World of Warcraft Forever addon that shows the current
+target's checked distance when the client provides one, or an approximate
+range bracket from the bundled LibRangeCheck-3.0 library.
 
-## Prototype
+| Measurement | Display |
+|---|---|
+| Checked distance | `23 yd`, rounded to the nearest whole yard |
+| Approximate bracket | `10-30 yd` |
+| Lower bound only | `50+ yd` |
+| Selected target without an available measurement | `N/A` |
+| No target | Box hidden |
 
-The Lua modules implement distance validation and formatting, a display
-controller and frame view, font-size normalization, target tracking, and
-throttling. `tests\Run-Tests.lua`
-supplies mock client APIs; the prototype does not silently substitute those
-mocks for real client APIs.
-
-The next implementer must verify the integrations below and provide an adapter
-to `RangeFinder.Core.New(adapter, savedSettings)`:
-
-- `hasTarget()` returns whether the current target exists.
-- `getDistance()` returns a finite, non-negative number of yards, or `nil`
-  and a reason when the measurement is unavailable. Unexpected errors must
-  propagate. It must not pretend range estimates are exact distances.
-- `view:SetText(text)` and `view:SetFontSize(size)` render and resize the box.
-  `RangeFinder.Display.CreateView(createFrame, parent, fontPath, TargetFrame)`
-  anchors the box directly above the target frame's visible portrait.
-- `diagnostic(message)` reports repaired settings through an appropriate
-  client mechanism.
-
-The bootstrap initializes the saved-variable table, creates one controller,
-routes target changes and world entry, and polls through one updater. It also
-connects the native Options slider to `options:SetFontSize(value)`.
-
-`RangeFinder.toc`, `Bootstrap.lua`, and `Install-RangeFinder.ps1` provide an
-installable Forever 1.60.1 build. The bootstrap uses `UnitDistanceSquared`
-only when its validity flag is true. When that is unavailable, it finds the
-bundled `LibRangeCheck-3.0` library and displays a bracket such as `10-30 yd`
-or an over-limit value such as `50+ yd`; it never presents that estimate as an
-exact distance. The box is hidden when no target exists.
-
-The client has no documented addon-frame registration API for native Edit Mode.
-The display is instead anchored to the visible top of the target portrait and
-follows it as the frame moves.
+The box sits directly above the standard target frame's portrait and follows
+its position. There is no separate Edit Mode registration, preview, dragging,
+or saved position. Font size is configurable under
+**Options > AddOns > RangeFinder**, defaults to 14, and persists account-wide
+within the integer range 8-32.
 
 ## Installation
 
-With the game closed, install the addon with:
+With the game closed, run:
 
 ```powershell
 .\Install-RangeFinder.ps1
 ```
 
-Enable **RangeFinder** at character select. The box appears directly above the target
-unit frame. Adjust its font size under **Options > AddOns > RangeFinder**.
+The default destination is
+`D:\World of Warcraft\_forever_\Interface\AddOns`. Override it if needed:
 
-## Third-party notices
+```powershell
+.\Install-RangeFinder.ps1 -AddOnsPath 'E:\World of Warcraft\_forever_\Interface\AddOns'
+```
 
-RangeFinder bundles [LibRangeCheck-3.0](https://github.com/WeakAuras/LibRangeCheck-3.0)
-and LibStub, both under the MIT License. Their complete license notices are in
-`LICENSES\`.
+Enable **RangeFinder** at character select. The installer copies the runtime
+modules and licenses, removes the obsolete `EditMode.lua` from an existing
+installation, and strips upstream `@do-not-package@` blocks from the installed
+library. The vendored source remains intact for maintenance.
 
-## Prototype tests
+## Implementation
 
-From this directory, with a compatible Lua interpreter installed:
+`Bootstrap.lua` loads saved settings, creates one controller, registers the
+font-size slider, routes target/world events, and drives a throttled updater.
+Distances refresh immediately on target changes and approximately every
+0.1 seconds while a target exists. Library calls bypass the range cache so
+secret-GUID unit-token entries cannot leak the previous target's bracket.
+Text, visibility, and font updates are applied only when their inputs change.
+
+`RangeFinder.Core.New(adapter, savedSettings)` keeps client boundaries mockable:
+
+- `hasTarget()` reports whether the target exists.
+- `getDistance()` returns a finite non-negative yard value, a bounded range
+  `{ minimum = n, maximum = m }` with `n < m`, a lower bound `{ minimum = n }`,
+  or `nil` and an unavailable reason. Unexpected errors propagate.
+- `view:SetText(text)`, `view:SetFontSize(size)`, and `view:SetVisible(visible)`
+  update the box. `Display.CreateView` receives the portrait anchor.
+- `diagnostic(message)` reports repaired font settings.
+
+## Lightweight tests
+
+From this directory, with a compatible Lua interpreter:
 
 ```powershell
 lua .\tests\Run-Tests.lua
 ```
 
-The harness uses mock boundaries, not the game client. On the development
-machine it was also run successfully with Lupa's Lua 5.1 runtime installed
-temporarily in session storage. The actual Forever runtime has not been
-confirmed.
+The harness covers range validation and formatting, controller lifecycle,
+throttling, settings, display sizing, and mocked bootstrap range retrieval.
+It is not loaded by the add-on and does not verify game-client behavior.
 
-## Feasibility findings
+## Forever compatibility and remaining verification
 
-The public [Forever UI source, revision
-`9dc84f0`](https://github.com/Gethe/wow-ui-source/tree/9dc84f0d3bbae1768ac3405b3716000bd93eda06)
-identifies itself as **1.60.1 (70862)**. This is a source snapshot, not
-confirmation of the build installed on the machine that runs the game.
+The TOC targets interface `16001`. The public
+[Forever UI source snapshot](https://github.com/Gethe/wow-ui-source/tree/9dc84f0d3bbae1768ac3405b3716000bd93eda06)
+identifies itself as **1.60.1 (70862)**; this is not confirmation of the
+installed build on the game machine.
 
-- **Distance:** The snapshot's
-  [Unit API definitions](https://github.com/Gethe/wow-ui-source/blob/9dc84f0d3bbae1768ac3405b3716000bd93eda06/Interface/AddOns/Blizzard_APIDocumentationGenerated/UnitDocumentation.lua)
-  list `UnitDistanceSquared(unit)` and `UnitPosition(unit)`, but do not
-  establish their supported target categories or measurement semantics.
-  General Warcraft Wiki documentation describes
-  [`UnitDistanceSquared`](https://warcraft.wiki.gg/wiki/API:UnitDistanceSquared)
-  as limited to group members and
-  [`UnitPosition`](https://warcraft.wiki.gg/wiki/API:UnitPosition) as
-  unavailable for units outside the group, with restrictions in instances.
-  These references are not proof of Forever-specific behavior. Exact
-  player-to-target distance for friendly and hostile players, NPCs, and
-  creatures remains unverified.
-- **Edit Mode:** The snapshot contains
-  [Edit Mode API definitions](https://github.com/Gethe/wow-ui-source/blob/9dc84f0d3bbae1768ac3405b3716000bd93eda06/Interface/AddOns/Blizzard_APIDocumentationGenerated/EditModeManagerDocumentation.lua)
-  and an internal
-  [`RegisterSystemFrame`](https://github.com/Gethe/wow-ui-source/blob/9dc84f0d3bbae1768ac3405b3716000bd93eda06/Interface/AddOns/Blizzard_EditMode/Shared/EditModeManager.lua)
-  method. Their presence does not establish a supported addon registration
-  mechanism or addon-frame save, cancel, layout-switching, and combat
-  semantics.
-- **Options and runtime:** The exact supported addon options and slider
-  lifecycle, installed client interface version, and runtime behavior remain
-  unverified.
+The bootstrap uses `UnitDistanceSquared("target")` only when its validity flag
+is true, then falls back to approximate library results. Estimates are never
+formatted as exact distances. The library includes Forever-specific handling;
+other WoW flavors are not compatibility evidence for this add-on.
 
-## Required next steps
+No WoW installation is available on the development machine. Actual Forever
+API compatibility, secret-value restrictions, target-category coverage,
+distance semantics, portrait anchoring, settings lifecycle, and combat and
+instance behavior still require verification on the game machine. See
+[PLAN.md](PLAN.md) for the current scope and acceptance checklist.
 
-Obtain evidence from the actual Forever client or reliable Forever-specific
-documentation for each feasibility item in `PLAN.md`. In particular, verify
-target-category coverage and yard semantics, and demonstrate native Edit Mode
-registration and save/cancel behavior for an addon frame. Record the actual
-client build and distinguish client results from mocked checks. If the required
-APIs are unavailable or only cover some targets, a scope change needs user
-approval before implementing an approximate or otherwise reduced-scope
-fallback.
+## Third-party notices
 
-The sibling addon's installer defaults to
-`D:\World of Warcraft\_forever_\Interface\AddOns`; this is only an existing
-convention and has not been validated on the game machine.
+RangeFinder bundles
+[LibRangeCheck-3.0](https://github.com/WeakAuras/LibRangeCheck-3.0) and LibStub.
+License notices are retained in `LICENSES\` and the vendored sources.

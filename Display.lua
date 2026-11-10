@@ -48,8 +48,8 @@ end
 function Display.New(view)
     local display = { view = view }
 
-    function display:Render(measurement, preview)
-        local text = preview and "23 yd" or RangeFinder.Range.Format(measurement)
+    function display:Render(measurement)
+        local text = RangeFinder.Range.Format(measurement)
         if text ~= self.text then
             self.view:SetText(text)
             self.text = text

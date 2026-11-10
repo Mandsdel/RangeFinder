@@ -42,7 +42,7 @@ end
 
 function Range.Read(getDistance)
     local value, reason = getDistance()
-    if not Range.IsValid(value) and not Range.IsApproximate(value) then
+    if not Range.IsValid(value) and not Range.IsApproximate(value) and not Range.IsAbove(value) then
         return nil, reason or "invalid or unavailable measurement"
     end
     return value

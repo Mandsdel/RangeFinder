@@ -17,7 +17,8 @@ local function getDistance()
         error("RangeFinder: LibRangeCheck-3.0 failed to load")
     end
 
-    local minimum, maximum = rangeChecker:GetRange("target")
+    -- A unit-token cache can still contain the previous target when GUIDs are secret.
+    local minimum, maximum = rangeChecker:GetRange("target", nil, nil, 0)
     if minimum and maximum then
         return RangeFinder.Range.Approximate(minimum, maximum)
     end

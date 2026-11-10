@@ -8,7 +8,6 @@ Libs\LibStub\LibStub.lua
 Libs\LibRangeCheck-3.0\LibRangeCheck-3.0.lua
 Range.lua
 Display.lua
-EditMode.lua
 Options.lua
 Core.lua
 Bootstrap.lua
