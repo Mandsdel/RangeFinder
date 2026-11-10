@@ -1,0 +1,275 @@
+local namespace = {}
+for _, file in ipairs({ "Range.lua", "Display.lua", "EditMode.lua", "Options.lua", "Core.lua" }) do
+    local chunk, errorMessage = loadfile(file)
+    assert(chunk, errorMessage)
+    chunk("RangeFinder", namespace)
+end
+
+local count = 0
+local function test(name, fn)
+    local ok, err = pcall(fn)
+    if not ok then
+        error(name .. ": " .. tostring(err), 0)
+    end
+    count = count + 1
+end
+
+local function equal(actual, expected)
+    assert(actual == expected, "expected " .. tostring(expected) .. ", got " .. tostring(actual))
+end
+
+local function setup(saved)
+    local state = {
+        target = false,
+        value = nil,
+        reads = 0,
+        textUpdates = 0,
+        fontUpdates = 0,
+        diagnostics = {},
+    }
+    local view = {}
+    function view:SetText(value)
+        state.text = value
+        state.textUpdates = state.textUpdates + 1
+    end
+    function view:SetFontSize(value)
+        state.fontSize = value
+        state.fontUpdates = state.fontUpdates + 1
+    end
+    local adapter = {
+        view = view,
+        hasTarget = function() return state.target end,
+        getDistance = function()
+            state.reads = state.reads + 1
+            if state.failure then
+                error("distance API failure")
+            end
+            return state.value, state.reason
+        end,
+        diagnostic = function(message)
+            table.insert(state.diagnostics, message)
+        end,
+    }
+    local storage = saved or {}
+    return namespace.Core.New(adapter, storage), state, storage
+end
+
+test("whole-yard formatting", function()
+    for _, item in ipairs({
+        { 0, "0 yd" }, { 0.49, "0 yd" }, { 0.5, "1 yd" },
+        { 23.49, "23 yd" }, { 23.5, "24 yd" }, { 1234, "1234 yd" },
+    }) do
+        equal(namespace.Range.Format(item[1]), item[2])
+    end
+end)
+
+test("invalid measurements and unavailable reason", function()
+    for _, value in ipairs({ -1, "23", 0 / 0, math.huge, -math.huge }) do
+        equal(namespace.Range.Format(value), "N/A")
+        local result = namespace.Range.Read(function() return value end)
+        equal(result, nil)
+    end
+    equal(namespace.Range.Format(nil), "N/A")
+    local result, reason = namespace.Range.Read(function() return nil, "out of range" end)
+    equal(result, nil)
+    equal(reason, "out of range")
+    local valid = namespace.Range.Read(function() return 0 end)
+    equal(valid, 0)
+end)
+
+test("initialization without target is idempotent and does not poll", function()
+    local controller, state, saved = setup()
+    controller:Initialize()
+    controller:Initialize()
+    for _ = 1, 10 do controller:OnUpdate(1) end
+    equal(state.text, "N/A")
+    equal(state.reads, 0)
+    equal(state.textUpdates, 1)
+    equal(state.fontUpdates, 1)
+    equal(saved.fontSize, 14)
+end)
+
+test("already selected target and world entry refresh", function()
+    local controller, state = setup({ fontSize = 18 })
+    state.target = true
+    state.value = 12.5
+    controller:Initialize()
+    equal(state.text, "13 yd")
+    equal(state.fontSize, 18)
+    state.value = 21
+    controller:OnWorldEntry()
+    equal(state.text, "21 yd")
+end)
+
+test("target switching clearing and disappearing replace old values", function()
+    local controller, state = setup()
+    controller:Initialize()
+    state.target = true
+    state.value = 20
+    controller:OnTargetChanged()
+    equal(state.text, "20 yd")
+    state.value = nil
+    controller:OnTargetChanged()
+    equal(state.text, "N/A")
+    state.value = 4
+    controller:OnTargetChanged()
+    equal(state.text, "4 yd")
+    state.target = false
+    controller:OnTargetChanged()
+    equal(state.text, "N/A")
+    equal(state.reads, 3)
+    state.target = true
+    state.value = 7
+    controller:OnTargetChanged()
+    state.target = false
+    controller:OnUpdate(0.1)
+    equal(state.text, "N/A")
+    equal(state.reads, 4)
+    controller:OnUpdate(1)
+    equal(state.reads, 4)
+end)
+
+test("polling is throttled without catch-up bursts", function()
+    local controller, state = setup()
+    state.target = true
+    state.value = 1
+    controller:Initialize()
+    controller:OnUpdate(0.04)
+    controller:OnUpdate(0.05)
+    equal(state.reads, 1)
+    controller:OnUpdate(0.02)
+    equal(state.reads, 2)
+    controller:OnUpdate(10)
+    equal(state.reads, 3)
+    controller:OnUpdate(0.01)
+    equal(state.reads, 3)
+    state.value = 2
+    controller:OnTargetChanged()
+    equal(state.reads, 4)
+    equal(state.text, "2 yd")
+end)
+
+test("preview remains separate and exit remeasures target", function()
+    local controller, state = setup()
+    controller:Initialize()
+    controller.editMode:Enter()
+    controller.editMode:Enter()
+    equal(state.text, "23 yd")
+    state.target = true
+    state.value = 45
+    controller:OnTargetChanged()
+    equal(state.text, "23 yd")
+    state.value = 46
+    controller.editMode:Exit()
+    equal(state.text, "46 yd")
+    equal(state.reads, 2)
+    controller.editMode:Exit()
+    equal(state.reads, 2)
+end)
+
+test("preview handles font changes and a cleared target", function()
+    local controller, state, saved = setup()
+    state.target = true
+    state.value = 6
+    controller:Initialize()
+    controller.editMode:Enter()
+    controller.options:SetFontSize(32)
+    equal(state.fontSize, 32)
+    equal(saved.fontSize, 32)
+    equal(state.text, "23 yd")
+    state.target = false
+    controller:OnTargetChanged()
+    equal(state.text, "23 yd")
+    controller.editMode:Exit()
+    equal(state.text, "N/A")
+    equal(state.reads, 1)
+end)
+
+test("settings normalize persist and diagnose repairs", function()
+    for _, item in ipairs({
+        { 7, 8, 1 }, { 32.6, 32, 1 }, { 14.5, 15, 1 },
+        { "18", 14, 1 }, { math.huge, 14, 1 }, { 0 / 0, 14, 1 },
+        { 8, 8, 0 }, { 32, 32, 0 },
+    }) do
+        local controller, state, saved = setup({ fontSize = item[1] })
+        controller:Initialize()
+        equal(saved.fontSize, item[2])
+        equal(state.fontSize, item[2])
+        equal(#state.diagnostics, item[3])
+        controller:Initialize()
+        equal(#state.diagnostics, item[3])
+    end
+    local controller, state, saved = setup()
+    controller:Initialize()
+    controller.options:SetFontSize(20)
+    controller.options:SetFontSize(20)
+    equal(saved.fontSize, 20)
+    equal(state.fontSize, 20)
+    equal(state.fontUpdates, 2)
+end)
+
+test("unchanged text does not redraw", function()
+    local controller, state = setup()
+    state.target = true
+    state.value = 10.1
+    controller:Initialize()
+    state.value = 10.2
+    controller:OnUpdate(0.1)
+    equal(state.reads, 2)
+    equal(state.textUpdates, 1)
+end)
+
+test("view resizes without moving its anchor", function()
+    local metrics = { points = 0, width = 0, height = 0 }
+    local text = {}
+    function text:SetPoint() end
+    function text:SetJustifyH() end
+    function text:SetFont(path, size)
+        equal(path, "font")
+        metrics.fontSize = size
+        return true
+    end
+    function text:SetText(value) metrics.text = value end
+    function text:GetStringWidth() return #(metrics.text or "") * (metrics.fontSize or 0) end
+    function text:GetStringHeight() return metrics.fontSize or 0 end
+    local texture = {}
+    function texture:SetAllPoints() end
+    function texture:SetColorTexture() end
+    local frame = {}
+    function frame:SetPoint() metrics.points = metrics.points + 1 end
+    function frame:EnableMouse(value) equal(value, false) end
+    function frame:CreateTexture() return texture end
+    function frame:CreateFontString() return text end
+    function frame:SetSize(width, height)
+        metrics.width, metrics.height = width, height
+    end
+    local view = namespace.Display.CreateView(function() return frame end, {}, "font")
+    view:SetFontSize(14)
+    view:SetText("1234 yd")
+    equal(metrics.width, 114)
+    equal(metrics.height, 26)
+    view:SetFontSize(32)
+    equal(metrics.width, 240)
+    equal(metrics.height, 44)
+    equal(metrics.points, 1)
+end)
+
+test("API errors remain visible", function()
+    local controller, state = setup()
+    state.target = true
+    state.failure = true
+    local ok, err = pcall(function() controller:Initialize() end)
+    equal(ok, false)
+    assert(tostring(err):find("distance API failure", 1, true))
+    state.failure = false
+    state.value = 8
+    controller:Initialize()
+    equal(state.text, "8 yd")
+    state.failure = true
+    local changed, changeError = pcall(function() controller:OnTargetChanged() end)
+    equal(changed, false)
+    assert(tostring(changeError):find("distance API failure", 1, true))
+    equal(state.text, "N/A")
+end)
+
+print("Passed " .. count .. " tests")
