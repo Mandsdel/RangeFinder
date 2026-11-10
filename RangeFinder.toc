@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: RangeFinder
+## Notes: Displays the checked distance to your current target.
+## Version: 0.1.0
+## SavedVariables: RangeFinderDB
+
+Libs\LibStub\LibStub.lua
+Libs\LibRangeCheck-3.0\LibRangeCheck-3.0.lua
+Range.lua
+Display.lua
+EditMode.lua
+Options.lua
+Core.lua
+Bootstrap.lua

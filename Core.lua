@@ -20,6 +20,7 @@ function Core.New(adapter, saved)
     controller.editMode = RangeFinder.EditMode.New(controller)
 
     function controller:Render()
+        self.display:SetVisible(self.hasTarget)
         self.display:Render(self.measurement, self.preview)
     end
 
@@ -34,6 +35,7 @@ function Core.New(adapter, saved)
 
     function controller:OnTargetChanged()
         self.elapsed = 0
+        self.hasTarget = self.adapter.hasTarget()
         self.measurement = nil
         self:Render()
         self:Refresh()

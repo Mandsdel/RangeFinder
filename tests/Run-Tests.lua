@@ -25,6 +25,7 @@ local function setup(saved)
         reads = 0,
         textUpdates = 0,
         fontUpdates = 0,
+        visible = nil,
         diagnostics = {},
     }
     local view = {}
@@ -35,6 +36,9 @@ local function setup(saved)
     function view:SetFontSize(value)
         state.fontSize = value
         state.fontUpdates = state.fontUpdates + 1
+    end
+    function view:SetVisible(value)
+        state.visible = value
     end
     local adapter = {
         view = view,
@@ -61,6 +65,8 @@ test("whole-yard formatting", function()
     }) do
         equal(namespace.Range.Format(item[1]), item[2])
     end
+    equal(namespace.Range.Format(namespace.Range.Approximate(10, 30)), "10-30 yd")
+    equal(namespace.Range.Format(namespace.Range.Above(50)), "50+ yd")
 end)
 
 test("invalid measurements and unavailable reason", function()
@@ -83,6 +89,7 @@ test("initialization without target is idempotent and does not poll", function()
     controller:Initialize()
     for _ = 1, 10 do controller:OnUpdate(1) end
     equal(state.text, "N/A")
+    equal(state.visible, false)
     equal(state.reads, 0)
     equal(state.textUpdates, 1)
     equal(state.fontUpdates, 1)
@@ -95,6 +102,7 @@ test("already selected target and world entry refresh", function()
     state.value = 12.5
     controller:Initialize()
     equal(state.text, "13 yd")
+    equal(state.visible, true)
     equal(state.fontSize, 18)
     state.value = 21
     controller:OnWorldEntry()
@@ -236,14 +244,23 @@ test("view resizes without moving its anchor", function()
     function texture:SetAllPoints() end
     function texture:SetColorTexture() end
     local frame = {}
-    function frame:SetPoint() metrics.points = metrics.points + 1 end
+    function frame:SetPoint(...)
+        metrics.points = metrics.points + 1
+        metrics.point = { ... }
+    end
     function frame:EnableMouse(value) equal(value, false) end
     function frame:CreateTexture() return texture end
     function frame:CreateFontString() return text end
     function frame:SetSize(width, height)
         metrics.width, metrics.height = width, height
     end
-    local view = namespace.Display.CreateView(function() return frame end, {}, "font")
+    local anchor = {}
+    local view = namespace.Display.CreateView(function() return frame end, {}, "font", anchor)
+    equal(metrics.point[1], "BOTTOM")
+    equal(metrics.point[2], anchor)
+    equal(metrics.point[3], "TOP")
+    equal(metrics.point[4], 0)
+    equal(metrics.point[5], 0)
     view:SetFontSize(14)
     view:SetText("1234 yd")
     equal(metrics.width, 114)

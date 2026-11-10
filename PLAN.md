@@ -10,15 +10,27 @@ Follow the phases in order. Complete the API feasibility gate before writing add
 
 ## Requirements and decision ownership
 
+### Approved scope change
+
+The user approved anchoring the range box directly above the standard `TargetFrame`
+instead of native Edit Mode positioning. This supersedes every native Edit Mode
+positioning and preview requirement in this plan. The frame must follow
+`TargetFrame`; it must not add custom dragging or position persistence.
+
+The user approved bundling the MIT-licensed LibRangeCheck-3.0 library for
+clearly labeled approximate range brackets when Forever does not provide an
+exact target distance. It may display `10-30 yd` or `50+ yd`, but must never
+show an estimate as an exact `30 yd`.
+
 | ID | Requirement | Decision rule |
 |---|---|---|
-| R1 | Show current player-to-target distance in whole yards | Use a verified numerical yard measurement; round only for display |
+| R1 | Show current player-to-target distance in whole yards when available, otherwise a labeled upper-bound range | Never present an estimate as exact |
 | R2 | Show `N/A` without a target or available measurement | Never retain the previous target's value |
-| R3 | Position the box through Forever's built-in Edit Mode | No substitute standalone drag mode |
+| R3 | Anchor the box above the standard target unit frame | No custom dragging or position persistence |
 | R4 | Configure font size under Options > Addons > RangeFinder | Changes apply immediately and persist |
 | R5 | Remain lightweight and safe during normal gameplay | No external services, gameplay automation, or protected gameplay actions |
 
-Implementation defaults, not additional user requirements: nearest-integer rounding, a dark centered-text box, a `23 yd` Edit Mode preview, a 0.1-second polling interval, and account-wide font size. Use a font-size default of 14 with an integer slider from 8 to 32. Default placement is centered horizontally, 120 UI units above screen center. Adjust these defaults only if verified client constraints require it, and document the reason.
+Implementation defaults, not additional user requirements: nearest-integer rounding, a dark centered-text box placed eight pixels above `TargetFrame`, a 0.1-second polling interval, and account-wide font size. Use a font-size default of 14 with an integer slider from 8 to 32. Adjust these defaults only if verified client constraints require it, and document the reason.
 
 User approval is required to replace exact measurements with estimates, replace native Edit Mode with custom dragging, add a runtime dependency, or change the requested options location.
 

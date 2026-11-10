@@ -3,9 +3,10 @@ local _, RangeFinder = ...
 local Display = {}
 RangeFinder.Display = Display
 
-function Display.CreateView(createFrame, parent, fontPath)
+function Display.CreateView(createFrame, parent, fontPath, anchorFrame)
+    assert(anchorFrame, "RangeFinder: TargetFrame is unavailable")
     local frame = createFrame("Frame", nil, parent)
-    frame:SetPoint("CENTER", parent, "CENTER", 0, 120)
+    frame:SetPoint("BOTTOM", anchorFrame, "TOP", 0, 0)
     frame:EnableMouse(false)
 
     local background = frame:CreateTexture(nil, "BACKGROUND")
@@ -33,6 +34,14 @@ function Display.CreateView(createFrame, parent, fontPath)
         resize()
     end
 
+    function view:SetVisible(visible)
+        if visible then
+            frame:Show()
+        else
+            frame:Hide()
+        end
+    end
+
     return view
 end
 
@@ -44,6 +53,13 @@ function Display.New(view)
         if text ~= self.text then
             self.view:SetText(text)
             self.text = text
+        end
+    end
+
+    function display:SetVisible(visible)
+        if visible ~= self.visible then
+            self.view:SetVisible(visible)
+            self.visible = visible
         end
     end
 

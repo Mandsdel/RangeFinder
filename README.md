@@ -1,16 +1,14 @@
 # RangeFinder
 
-RangeFinder is a prototype for a World of Warcraft Forever addon. At the
-user's request, development has continued past the feasibility gate in
-[PLAN.md](PLAN.md) using mocked client boundaries. There is no installable
-addon yet: the actual client integrations and in-game behavior remain
-unverified.
+RangeFinder is a World of Warcraft Forever addon that displays the current
+target's checked distance when the client provides one, or a clearly labeled
+approximate range bracket from interaction and learned-spell range checks.
 
 ## Prototype
 
 The Lua modules implement distance validation and formatting, a display
-controller and provisional frame view, font-size normalization, target
-tracking, throttling, and Edit Mode preview state. `tests\Run-Tests.lua`
+controller and frame view, font-size normalization, target tracking, and
+throttling. `tests\Run-Tests.lua`
 supplies mock client APIs; the prototype does not silently substitute those
 mocks for real client APIs.
 
@@ -22,25 +20,42 @@ to `RangeFinder.Core.New(adapter, savedSettings)`:
   and a reason when the measurement is unavailable. Unexpected errors must
   propagate. It must not pretend range estimates are exact distances.
 - `view:SetText(text)` and `view:SetFontSize(size)` render and resize the box.
-  `RangeFinder.Display.CreateView(createFrame, parent, fontPath)` is a
-  provisional implementation using mocked frame methods in tests; its font,
-  frame APIs, and sizing must be verified in the client.
+  `RangeFinder.Display.CreateView(createFrame, parent, fontPath, TargetFrame)`
+  anchors the box directly above the target frame's visible portrait.
 - `diagnostic(message)` reports repaired settings through an appropriate
   client mechanism.
 
-The missing client bootstrap must initialize the saved-variable table after
-loading, create exactly one controller, call `Initialize()`, route target
-changes and world entry to `OnTargetChanged()` and `OnWorldEntry()`, and
-route elapsed time to `OnUpdate(elapsed)` through one updater. It must
-connect the verified native options slider to `options:SetFontSize(value)`
-and native Edit Mode enter/exit to `editMode:Enter()` and `editMode:Exit()`.
-Position, save/cancel, layout switching, combat restrictions, and registration
-are not implemented. Do not treat the preview callbacks as native Edit Mode
-integration.
+The bootstrap initializes the saved-variable table, creates one controller,
+routes target changes and world entry, and polls through one updater. It also
+connects the native Options slider to `options:SetFontSize(value)`.
 
-There is deliberately no TOC or installer yet. Add them only after the actual
-client integration and interface version are verified. No coverage report or
-in-game acceptance results are available.
+`RangeFinder.toc`, `Bootstrap.lua`, and `Install-RangeFinder.ps1` provide an
+installable Forever 1.60.1 build. The bootstrap uses `UnitDistanceSquared`
+only when its validity flag is true. When that is unavailable, it finds the
+bundled `LibRangeCheck-3.0` library and displays a bracket such as `10-30 yd`
+or an over-limit value such as `50+ yd`; it never presents that estimate as an
+exact distance. The box is hidden when no target exists.
+
+The client has no documented addon-frame registration API for native Edit Mode.
+The display is instead anchored to the visible top of the target portrait and
+follows it as the frame moves.
+
+## Installation
+
+With the game closed, install the addon with:
+
+```powershell
+.\Install-RangeFinder.ps1
+```
+
+Enable **RangeFinder** at character select. The box appears directly above the target
+unit frame. Adjust its font size under **Options > AddOns > RangeFinder**.
+
+## Third-party notices
+
+RangeFinder bundles [LibRangeCheck-3.0](https://github.com/WeakAuras/LibRangeCheck-3.0)
+and LibStub, both under the MIT License. Their complete license notices are in
+`LICENSES\`.
 
 ## Prototype tests
 
