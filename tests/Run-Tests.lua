@@ -283,15 +283,17 @@ test("bootstrap bypasses target-token cache and preserves range shapes", functio
     local minimum, maximum = 50, nil
     local checkedSquared, checked = nil, false
     local rangeReads = 0
+    local hasTarget = true
     local environment = setmetatable({
         RangeFinderDB = {},
         print = function() end,
-        UnitExists = function() return true end,
+        UnitExists = function() return hasTarget end,
         UnitDistanceSquared = function() return checkedSquared, checked end,
         TargetFrame = { TargetFrameContainer = { Portrait = {} } },
         CreateFrame = function()
             return {
                 RegisterEvent = function() end,
+                UnregisterEvent = function() end,
                 SetScript = function(_, event, fn) scripts[event] = fn end,
             }
         end,
@@ -334,6 +336,7 @@ test("bootstrap bypasses target-token cache and preserves range shapes", functio
     scripts.OnEvent(nil, "ADDON_LOADED", "RangeFinder")
     scripts.OnEvent(nil, "PLAYER_LOGIN")
     equal(displayed, "50+ yd")
+    assert(scripts.OnUpdate)
     minimum, maximum = 10, 30
     scripts.OnEvent(nil, "PLAYER_TARGET_CHANGED")
     equal(displayed, "10-30 yd")
@@ -345,6 +348,16 @@ test("bootstrap bypasses target-token cache and preserves range shapes", functio
     scripts.OnEvent(nil, "PLAYER_TARGET_CHANGED")
     equal(displayed, "23 yd")
     equal(rangeReads, 3)
+    hasTarget = false
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "N/A")
+    equal(scripts.OnUpdate, nil)
+    hasTarget = true
+    scripts.OnEvent(nil, "PLAYER_TARGET_CHANGED")
+    assert(scripts.OnUpdate)
+    hasTarget = false
+    scripts.OnEvent(nil, "PLAYER_TARGET_CHANGED")
+    equal(scripts.OnUpdate, nil)
 end)
 
 print("Passed " .. count .. " tests")

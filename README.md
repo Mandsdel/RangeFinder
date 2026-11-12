@@ -43,7 +43,8 @@ library. The vendored source remains intact for maintenance.
 `Bootstrap.lua` loads saved settings, creates one controller, registers the
 font-size slider, routes target/world events, and drives a throttled updater.
 Distances refresh immediately on target changes and approximately every
-0.1 seconds while a target exists. Library calls bypass the range cache so
+0.1 seconds while a target exists; the per-frame updater is detached when
+there is no target. Library calls bypass the range cache so
 secret-GUID unit-token entries cannot leak the previous target's bracket.
 Text, visibility, and font updates are applied only when their inputs change.
 

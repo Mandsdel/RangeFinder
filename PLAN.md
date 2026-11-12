@@ -17,7 +17,7 @@ scheme. Changes to measurement scope or dependencies require user approval.
 |---|---|
 | Target distance | Checked yard value rounded to nearest integer, otherwise a labeled range |
 | Unavailable measurement | `N/A`, never the previous target's value |
-| No target | Box hidden; distance polling stops |
+| No target | Box hidden; per-frame updater detached and distance polling stops |
 | Placement | Immediately above the target portrait, following its anchor |
 | Font size | Options > AddOns > RangeFinder; default 14, integer bounds 8-32 |
 | Persistence | Account-wide font size only |

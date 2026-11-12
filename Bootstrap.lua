@@ -58,6 +58,22 @@ local function createOptions()
 end
 
 local frame = CreateFrame("Frame")
+local polling = false
+local function onUpdate(_, elapsed)
+    controller:OnUpdate(elapsed)
+    if not controller.hasTarget then
+        frame:SetScript("OnUpdate", nil)
+        polling = false
+    end
+end
+
+local function updatePolling()
+    if controller.hasTarget ~= polling then
+        polling = controller.hasTarget
+        frame:SetScript("OnUpdate", polling and onUpdate or nil)
+    end
+end
+
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
@@ -68,6 +84,7 @@ frame:SetScript("OnEvent", function(_, event, name)
             return
         end
         RangeFinderDB = type(RangeFinderDB) == "table" and RangeFinderDB or {}
+        frame:UnregisterEvent("ADDON_LOADED")
         return
     end
 
@@ -89,6 +106,7 @@ frame:SetScript("OnEvent", function(_, event, name)
         }, RangeFinderDB)
         controller:Initialize()
         createOptions()
+        updatePolling()
         return
     end
 
@@ -98,11 +116,6 @@ frame:SetScript("OnEvent", function(_, event, name)
         elseif event == "PLAYER_ENTERING_WORLD" then
             controller:OnWorldEntry()
         end
-    end
-end)
-
-frame:SetScript("OnUpdate", function(_, elapsed)
-    if controller then
-        controller:OnUpdate(elapsed)
+        updatePolling()
     end
 end)
