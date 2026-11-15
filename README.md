@@ -1,12 +1,14 @@
 # RangeFinder
 
 RangeFinder is a World of Warcraft Forever addon that shows the current
-target's checked distance when the client provides one, or an approximate
+target's precise distance whenever the client provides a valid distance or
+usable world positions, at any distance and whether on foot or flying.
+Only when neither precise source is available does it use an approximate
 range bracket from the bundled LibRangeCheck-3.0 library.
 
 | Measurement | Display |
 |---|---|
-| Checked distance | `23 yd`, rounded to the nearest whole yard |
+| Checked or world-position distance | `23 yd`, rounded to the nearest whole yard |
 | Approximate bracket | `10-30 yd` |
 | Lower bound only | `50+ yd` |
 | Selected target without an available measurement | `N/A` |
@@ -77,9 +79,16 @@ The TOC targets interface `16001`. The public
 identifies itself as **1.60.1 (70862)**; this is not confirmation of the
 installed build on the game machine.
 
-The bootstrap uses `UnitDistanceSquared("target")` only when its validity flag
-is true, then falls back to approximate library results. Estimates are never
-formatted as exact distances. The library includes Forever-specific handling;
+The bootstrap first uses `UnitDistanceSquared("target")` when its validity flag
+is true and the result is usable. Otherwise, if Forever exposes `UnitPosition`,
+it calculates the three-dimensional distance between player and target world
+positions in the same instance. Missing, invalid, or secret values are not
+used for arithmetic. There is no distance threshold or flight-only condition.
+World-position distance measures between unit positions, not spell reach or
+hitbox edges; its availability and semantics still need in-game verification.
+Only when neither precise source is usable does it fall back to approximate
+library results. Estimates are never formatted as exact distances.
+The library includes Forever-specific handling;
 other WoW flavors are not compatibility evidence for this add-on.
 
 No WoW installation is available on the development machine. Actual Forever

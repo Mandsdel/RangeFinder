@@ -7,15 +7,18 @@ original native Edit Mode positioning and preview requirements with a box
 anchored directly above the standard target frame's visible portrait.
 There is no custom dragging, position persistence, or preview feature.
 
-The approved range fallback uses bundled LibRangeCheck-3.0 estimates when
-checked distance is unavailable. Keep approximate brackets (`10-30 yd`) and
+Prioritize precise distances everywhere Forever supplies them: checked
+distance first, then usable player/target world positions in the same instance.
+There is no ground/flight gate or distance threshold. The approved range
+fallback uses bundled LibRangeCheck-3.0 estimates only when both precise
+sources are unavailable. Keep approximate brackets (`10-30 yd`) and
 lower-bound results (`50+ yd`) distinguishable from exact values (`23 yd`).
 Do not silently remove this fallback or substitute a different measurement
 scheme. Changes to measurement scope or dependencies require user approval.
 
 | Requirement | Current behavior |
 |---|---|
-| Target distance | Checked yard value rounded to nearest integer, otherwise a labeled range |
+| Target distance | Checked or world-position yard value rounded to nearest integer, otherwise a labeled range |
 | Unavailable measurement | `N/A`, never the previous target's value |
 | No target | Box hidden; per-frame updater detached and distance polling stops |
 | Placement | Immediately above the target portrait, following its anchor |
@@ -57,6 +60,8 @@ or accuracy. Verify these on the separate Forever game machine:
 | Login without a target, or clear target | Box hidden |
 | Login with an existing target | Current measurement shown |
 | Checked distance available | Rounded whole-yard value |
+| Checked distance unavailable, usable world positions available | Rounded 3D whole-yard distance, including nearby ground targets |
+| World positions unavailable, secret, invalid, or in different instances | Do not calculate from those positions; use range fallback |
 | Only a range bracket available | Distinct `minimum-maximum yd` output |
 | Only a lower bound available | Distinct `minimum+ yd` output |
 | Measurement unavailable | `N/A`; no stale target value |

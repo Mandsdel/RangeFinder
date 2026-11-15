@@ -284,11 +284,28 @@ test("bootstrap bypasses target-token cache and preserves range shapes", functio
     local checkedSquared, checked = nil, false
     local rangeReads = 0
     local hasTarget = true
+    local playerPosition, targetPosition
+    local positionReads = 0
+    local unpackValues = unpack or table.unpack
+    local secret = {}
     local environment = setmetatable({
         RangeFinderDB = {},
         print = function() end,
         UnitExists = function() return hasTarget end,
         UnitDistanceSquared = function() return checkedSquared, checked end,
+        issecretvalue = function(value) return value == secret end,
+        UnitPosition = function(unit)
+            positionReads = positionReads + 1
+            local position
+            if unit == "player" then
+                position = playerPosition
+            else
+                position = targetPosition
+            end
+            if position then
+                return unpackValues(position)
+            end
+        end,
         TargetFrame = { TargetFrameContainer = { Portrait = {} } },
         CreateFrame = function()
             return {
@@ -348,6 +365,65 @@ test("bootstrap bypasses target-token cache and preserves range shapes", functio
     scripts.OnEvent(nil, "PLAYER_TARGET_CHANGED")
     equal(displayed, "23 yd")
     equal(rangeReads, 3)
+    local previousPositionReads = positionReads
+    scripts.OnUpdate(nil, 0.1)
+    equal(positionReads, previousPositionReads)
+
+    checkedSquared, checked = nil, false
+    playerPosition = { -10, -20, -30, 1 }
+    targetPosition = { -7, -16, -30, 1 }
+    scripts.OnEvent(nil, "PLAYER_TARGET_CHANGED")
+    equal(displayed, "5 yd")
+    equal(rangeReads, 3)
+    targetPosition = { -7, -16, -18, 1 }
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "13 yd")
+    targetPosition = { -10, -20, -30, 1 }
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "0 yd")
+    targetPosition = { 6662, -20, -30, 1 }
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "6672 yd")
+    equal(rangeReads, 3)
+
+    for _, position in ipairs({
+        { -7, -16, -30, 2 },
+        { -7, -16, -30 },
+        { secret, -16, -30, 1 },
+        { -7, -16, -30, secret },
+        { 0 / 0, -16, -30, 1 },
+        { math.huge, -16, -30, 1 },
+        { "3", -16, -30, 1 },
+    }) do
+        targetPosition = position
+        scripts.OnUpdate(nil, 0.1)
+        equal(displayed, "30-40 yd")
+    end
+    targetPosition = { -7, -16, -30, 1 }
+    for _, squared in ipairs({ -1, 0 / 0, math.huge, secret }) do
+        checkedSquared, checked = squared, true
+        scripts.OnUpdate(nil, 0.1)
+        equal(displayed, "5 yd")
+    end
+    checkedSquared, checked = 529, false
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "5 yd")
+    checked = secret
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "5 yd")
+    checkedSquared, checked = 0, true
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "0 yd")
+    checkedSquared, checked = nil, false
+    playerPosition = nil
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "30-40 yd")
+    environment.UnitPosition = false
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "30-40 yd")
+    environment.UnitDistanceSquared = false
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "30-40 yd")
     hasTarget = false
     scripts.OnUpdate(nil, 0.1)
     equal(displayed, "N/A")
