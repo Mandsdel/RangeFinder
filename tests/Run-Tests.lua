@@ -215,11 +215,18 @@ test("unchanged text does not redraw", function()
     equal(state.textUpdates, 1)
 end)
 
-test("view resizes without moving its anchor", function()
+local function checkView(backdrop)
     local metrics = { points = 0, width = 0, height = 0 }
     local text = {}
     function text:SetPoint() end
     function text:SetJustifyH() end
+    function text:SetTextColor(r, g, b)
+        equal(r, 1); equal(g, 0.82); equal(b, 0)
+    end
+    function text:SetShadowColor(r, g, b, a)
+        equal(r, 0); equal(g, 0); equal(b, 0); equal(a, 1)
+    end
+    function text:SetShadowOffset(x, y) equal(x, 1); equal(y, -1) end
     function text:SetFont(path, size)
         equal(path, "font")
         metrics.fontSize = size
@@ -230,8 +237,21 @@ test("view resizes without moving its anchor", function()
     function text:GetStringHeight() return metrics.fontSize or 0 end
     local texture = {}
     function texture:SetAllPoints() end
-    function texture:SetColorTexture() end
+    function texture:SetTexture(path)
+        equal(path, "Interface\\DialogFrame\\UI-DialogBox-Background")
+        metrics.textured = true
+    end
     local frame = {}
+    if backdrop then
+        function frame:SetBackdrop(value)
+            equal(value.edgeFile, "Interface\\Tooltips\\UI-Tooltip-Border")
+            equal(value.bgFile, "Interface\\DialogFrame\\UI-DialogBox-Background")
+            metrics.textured = true
+        end
+        function frame:SetBackdropBorderColor(r, g, b, a)
+            equal(r, 0.65); equal(g, 0.55); equal(b, 0.35); equal(a, 1)
+        end
+    end
     function frame:SetPoint(...)
         metrics.points = metrics.points + 1
         metrics.point = { ... }
@@ -244,6 +264,7 @@ test("view resizes without moving its anchor", function()
     end
     local anchor = {}
     local view = namespace.Display.CreateView(function() return frame end, {}, "font", anchor)
+    equal(metrics.textured, true)
     equal(metrics.point[1], "BOTTOM")
     equal(metrics.point[2], anchor)
     equal(metrics.point[3], "TOP")
@@ -257,7 +278,10 @@ test("view resizes without moving its anchor", function()
     equal(metrics.width, 240)
     equal(metrics.height, 44)
     equal(metrics.points, 1)
-end)
+end
+
+test("view resizes without moving its anchor", function() checkView(true) end)
+test("view supports clients without backdrops", function() checkView(false) end)
 
 test("API errors remain visible", function()
     local controller, state = setup()

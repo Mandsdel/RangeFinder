@@ -20,6 +20,10 @@ or saved position. Font size is configurable under
 **Options > AddOns > RangeFinder**, defaults to 14, and persists account-wide
 within the integer range 8-32.
 
+The compact display uses a classic WoW textured background, a muted gold
+tooltip-style border, and shadowed gold text. The font-size controls remain
+in the game's native settings UI; positioning and range behavior are unchanged.
+
 ## Installation
 
 With the game closed, run:
