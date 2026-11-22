@@ -61,8 +61,11 @@ end
 function Display.New(view)
     local display = { view = view }
 
-    function display:Render(measurement)
+    function display:Render(measurement, threat)
         local text = RangeFinder.Range.Format(measurement)
+        if RangeFinder.Range.IsValid(threat) then
+            text = text .. "\n" .. string.format("%.0f%%", math.floor(threat + 0.5))
+        end
         if text ~= self.text then
             self.view:SetText(text)
             self.text = text

@@ -14,15 +14,27 @@ range bracket from the bundled LibRangeCheck-3.0 library.
 | Selected target without an available measurement | `N/A` |
 | No target | Box hidden |
 
+Your character's current threat percentage appears on a second line below the
+range (for example, `23 yd` above `65%`). It is shown only for attackable
+non-player targets when the client supplies a readable threat value. Player
+targets, friendly NPCs, missing threat data, and restricted/secret threat
+values have no threat line; a reported zero is shown as `0%`.
+The value is `rawPercentage` from
+`UnitDetailedThreatSituation("player", "target")`: your threat relative to
+the current tank's threat, not a percentage of the combined group's threat
+or the distance-adjusted threshold for pulling aggro. Values above 100% are
+not capped.
+
 The box sits directly above the standard target frame's portrait and follows
 its position. There is no separate Edit Mode registration, preview, dragging,
 or saved position. Font size is configurable under
 **Options > AddOns > RangeFinder**, defaults to 14, and persists account-wide
-within the integer range 8-32.
+within the integer range 8-32. The box grows to fit both lines when threat
+is available and shrinks back when it is not.
 
 The compact display uses a classic WoW textured background, a muted gold
 tooltip-style border, and shadowed gold text. The font-size controls remain
-in the game's native settings UI; positioning and range behavior are unchanged.
+in the game's native settings UI and apply to both lines.
 
 ## Installation
 
@@ -52,7 +64,9 @@ Distances refresh immediately on target changes and approximately every
 0.1 seconds while a target exists; the per-frame updater is detached when
 there is no target. Library calls bypass the range cache so
 secret-GUID unit-token entries cannot leak the previous target's bracket.
-Text, visibility, and font updates are applied only when their inputs change.
+Threat refreshes on the same schedule and is cleared together with distance
+when the target changes or disappears. Text, visibility, and font updates
+are applied only when their inputs change.
 
 `RangeFinder.Core.New(adapter, savedSettings)` keeps client boundaries mockable:
 
@@ -60,6 +74,8 @@ Text, visibility, and font updates are applied only when their inputs change.
 - `getDistance()` returns a finite non-negative yard value, a bounded range
   `{ minimum = n, maximum = m }` with `n < m`, a lower bound `{ minimum = n }`,
   or `nil` and an unavailable reason. Unexpected errors propagate.
+- `getThreat()` returns a finite non-negative percentage, or `nil` when
+  unavailable, restricted, or not applicable to the target.
 - `view:SetText(text)`, `view:SetFontSize(size)`, and `view:SetVisible(visible)`
   update the box. `Display.CreateView` receives the portrait anchor.
 - `diagnostic(message)` reports repaired font settings.
@@ -73,7 +89,8 @@ lua .\tests\Run-Tests.lua
 ```
 
 The harness covers range validation and formatting, controller lifecycle,
-throttling, settings, display sizing, and mocked bootstrap range retrieval.
+throttling, settings, two-line display sizing, mocked bootstrap range/threat
+retrieval, and secret-value handling in the bundled library.
 It is not loaded by the add-on and does not verify game-client behavior.
 
 ## Forever compatibility and remaining verification
@@ -92,6 +109,18 @@ World-position distance measures between unit positions, not spell reach or
 hitbox edges; its availability and semantics still need in-game verification.
 Only when neither precise source is usable does it fall back to approximate
 library results. Estimates are never formatted as exact distances.
+The bundled library is registered privately as
+`RangeFinder-LibRangeCheck-3.0`, so another addon's shared library cannot
+replace its safety guards. Local changes check spell, item, interaction,
+and unit-state results for secrecy before branching or comparing, and
+reject an entire bracket when a required check is restricted. GUIDs are
+checked before constructing cache keys; absent GUIDs use the unit token.
+Bootstrap results are validated again before formatting.
+Restricted range data displays `N/A`; it is not treated as "out of range,"
+retried through protected calls, or exposed in diagnostics.
+These guards address unsafe fallback paths consistent with errors after
+leaving a group and retargeting a former group member; reproducing that
+exact scenario still requires the game machine.
 The library includes Forever-specific handling;
 other WoW flavors are not compatibility evidence for this add-on.
 

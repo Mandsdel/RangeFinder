@@ -1,3 +1,19 @@
+local secret = {}
+issecretvalue = function(value) return rawequal(value, secret) end
+
+local function loadInEnvironment(file, environment, ...)
+    local chunk, errorMessage
+    if setfenv then
+        chunk, errorMessage = loadfile(file)
+        assert(chunk, errorMessage)
+        setfenv(chunk, environment)
+    else
+        chunk, errorMessage = loadfile(file, "t", environment)
+        assert(chunk, errorMessage)
+    end
+    return chunk(...)
+end
+
 local namespace = {}
 for _, file in ipairs({ "Range.lua", "Display.lua", "Options.lua", "Core.lua" }) do
     local chunk, errorMessage = loadfile(file)
@@ -50,6 +66,7 @@ local function setup(saved)
             end
             return state.value, state.reason
         end,
+        getThreat = function() return state.threat end,
         diagnostic = function(message)
             table.insert(state.diagnostics, message)
         end,
@@ -81,6 +98,42 @@ test("invalid measurements and unavailable reason", function()
     equal(reason, "out of range")
     local valid = namespace.Range.Read(function() return 0 end)
     equal(valid, 0)
+end)
+
+test("secret measurements and bounds are unavailable", function()
+    equal(namespace.Range.Format(secret), "N/A")
+    equal(namespace.Range.Approximate(secret, 30), nil)
+    equal(namespace.Range.Approximate(10, secret), nil)
+    equal(namespace.Range.Format({ minimum = 10, maximum = secret }), "N/A")
+    equal(namespace.Range.Format({ minimum = secret }), "N/A")
+end)
+
+test("threat is a second line and clears on target changes and lost threat", function()
+    local controller, state = setup()
+    state.target, state.value, state.threat = true, 23, 64.5
+    controller:Initialize()
+    equal(state.text, "23 yd\n65%")
+    state.threat = 0
+    controller:OnUpdate(0.1)
+    equal(state.text, "23 yd\n0%")
+    state.value, state.threat = nil, 120
+    controller:OnTargetChanged()
+    equal(state.text, "N/A\n120%")
+    state.threat = secret
+    controller:OnUpdate(0.1)
+    equal(state.text, "N/A")
+    state.threat = 100
+    controller:OnUpdate(0.1)
+    equal(state.text, "N/A\n100%")
+    state.threat = nil
+    controller:OnTargetChanged()
+    equal(state.text, "N/A")
+    state.threat = 50
+    controller:OnUpdate(0.1)
+    state.target = false
+    controller:OnTargetChanged()
+    equal(state.text, "N/A")
+    equal(state.visible, false)
 end)
 
 test("initialization without target is idempotent and does not poll", function()
@@ -233,8 +286,17 @@ local function checkView(backdrop)
         return true
     end
     function text:SetText(value) metrics.text = value end
-    function text:GetStringWidth() return #(metrics.text or "") * (metrics.fontSize or 0) end
-    function text:GetStringHeight() return metrics.fontSize or 0 end
+    function text:GetStringWidth()
+        local width = 0
+        for line in (metrics.text or ""):gmatch("[^\n]+") do
+            width = math.max(width, #line * (metrics.fontSize or 0))
+        end
+        return width
+    end
+    function text:GetStringHeight()
+        local _, breaks = (metrics.text or ""):gsub("\n", "")
+        return (breaks + 1) * (metrics.fontSize or 0)
+    end
     local texture = {}
     function texture:SetAllPoints() end
     function texture:SetTexture(path)
@@ -277,6 +339,9 @@ local function checkView(backdrop)
     view:SetFontSize(32)
     equal(metrics.width, 240)
     equal(metrics.height, 44)
+    view:SetText("23 yd\n65%")
+    equal(metrics.width, 176)
+    equal(metrics.height, 76)
     equal(metrics.points, 1)
 end
 
@@ -310,14 +375,21 @@ test("bootstrap bypasses target-token cache and preserves range shapes", functio
     local hasTarget = true
     local playerPosition, targetPosition
     local positionReads = 0
+    local isPlayer, canAttack = false, true
+    local threat, threatReads = nil, 0
     local unpackValues = unpack or table.unpack
-    local secret = {}
     local environment = setmetatable({
         RangeFinderDB = {},
         print = function() end,
         UnitExists = function() return hasTarget end,
         UnitDistanceSquared = function() return checkedSquared, checked end,
-        issecretvalue = function(value) return value == secret end,
+        UnitIsPlayer = function() return isPlayer end,
+        UnitCanAttack = function() return canAttack end,
+        UnitDetailedThreatSituation = function(unit, target)
+            equal(unit, "player"); equal(target, "target")
+            threatReads = threatReads + 1
+            return secret, secret, 99, threat, secret
+        end,
         UnitPosition = function(unit)
             positionReads = positionReads + 1
             local position
@@ -338,7 +410,8 @@ test("bootstrap bypasses target-token cache and preserves range shapes", functio
                 SetScript = function(_, event, fn) scripts[event] = fn end,
             }
         end,
-        LibStub = function()
+        LibStub = function(name)
+            equal(name, "RangeFinder-LibRangeCheck-3.0")
             return {
                 GetRange = function(_, unit, checkVisible, noItems, maxCacheAge)
                     equal(unit, "target")
@@ -364,16 +437,7 @@ test("bootstrap bypasses target-token cache and preserves range shapes", functio
             end,
         },
     }
-    local chunk, errorMessage
-    if setfenv then
-        chunk, errorMessage = loadfile("Bootstrap.lua")
-        assert(chunk, errorMessage)
-        setfenv(chunk, environment)
-    else
-        chunk, errorMessage = loadfile("Bootstrap.lua", "t", environment)
-        assert(chunk, errorMessage)
-    end
-    chunk("RangeFinder", addon)
+    loadInEnvironment("Bootstrap.lua", environment, "RangeFinder", addon)
     scripts.OnEvent(nil, "ADDON_LOADED", "RangeFinder")
     scripts.OnEvent(nil, "PLAYER_LOGIN")
     equal(displayed, "50+ yd")
@@ -448,6 +512,51 @@ test("bootstrap bypasses target-token cache and preserves range shapes", functio
     environment.UnitDistanceSquared = false
     scripts.OnUpdate(nil, 0.1)
     equal(displayed, "30-40 yd")
+    minimum, maximum = secret, secret
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "N/A")
+    minimum, maximum = 10, secret
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "N/A")
+    minimum, maximum = 10, 30
+    threat = 45.6
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "10-30 yd\n46%")
+    local previousThreatReads = threatReads
+    isPlayer = true
+    scripts.OnEvent(nil, "PLAYER_TARGET_CHANGED")
+    equal(displayed, "10-30 yd")
+    equal(threatReads, previousThreatReads)
+    isPlayer = secret
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "10-30 yd")
+    equal(threatReads, previousThreatReads)
+    isPlayer, canAttack = false, secret
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "10-30 yd")
+    equal(threatReads, previousThreatReads)
+    canAttack = false
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "10-30 yd")
+    equal(threatReads, previousThreatReads)
+    canAttack, threat = true, secret
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "10-30 yd")
+    threat = 0
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "10-30 yd\n0%")
+    threat = nil
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "10-30 yd")
+    environment.UnitDetailedThreatSituation = false
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "10-30 yd")
+    hasTarget = secret
+    scripts.OnUpdate(nil, 0.1)
+    equal(displayed, "N/A")
+    equal(scripts.OnUpdate, nil)
+    hasTarget = true
+    scripts.OnEvent(nil, "PLAYER_TARGET_CHANGED")
     hasTarget = false
     scripts.OnUpdate(nil, 0.1)
     equal(displayed, "N/A")
@@ -459,5 +568,111 @@ test("bootstrap bypasses target-token cache and preserves range shapes", functio
     scripts.OnEvent(nil, "PLAYER_TARGET_CHANGED")
     equal(scripts.OnUpdate, nil)
 end)
+
+local function checkLibrary(legacySpells)
+    local lib = {}
+    local state = { exists = true, assist = true, attack = false, pet = false,
+        dead = false, visible = true, result = true, guid = secret }
+    local environment = setmetatable({
+        LibStub = {
+            NewLibrary = function(_, name)
+                equal(name, "RangeFinder-LibRangeCheck-3.0")
+                return lib
+            end,
+        },
+        GetBuildInfo = function() return "", "", "", 16001 end,
+        WOW_PROJECT_ID = 16001,
+        WOW_PROJECT_MAINLINE = 1,
+        BOOKTYPE_SPELL = "spell",
+        C_SpellBook = {},
+        C_Spell = { IsSpellInRange = function() return state.result end },
+        GetInventorySlotInfo = function() return 10 end,
+        GetInventoryItemLink = function() end,
+        UnitClass = function() return "Priest", "PRIEST" end,
+        UnitRace = function() return "Human", "Human" end,
+        GetSpellInfo = function() return "Spell", nil, nil, nil, 0, 40 end,
+        GetNumSpellTabs = function() return 1 end,
+        GetSpellTabInfo = function() return "Spells", nil, 0, 1 end,
+        GetSpellBookItemName = function() return "Spell" end,
+        GetSpellBookItemInfo = function() return "SPELL" end,
+        C_Item = {
+            IsItemDataCachedByID = function() return true end,
+            GetItemInfo = function() return "Item" end,
+            IsItemInRange = function() return state.result end,
+        },
+        UnitExists = function() return state.exists end,
+        UnitCanAssist = function() return state.assist end,
+        UnitCanAttack = function() return state.attack end,
+        UnitIsUnit = function() return state.pet end,
+        UnitIsDeadOrGhost = function() return state.dead end,
+        UnitIsVisible = function() return state.visible end,
+        UnitGUID = function() return state.guid end,
+        InCombatLockdown = function() return false end,
+        CheckInteractDistance = function() return state.result end,
+        GetTime = function() return 1 end,
+        tinsert = table.insert,
+        tremove = table.remove,
+        wipe = function(values)
+            for key in pairs(values) do values[key] = nil end
+            return values
+        end,
+        C_Timer = { NewTicker = function() return {} end },
+        CreateFrame = function()
+            return { RegisterEvent = function() end, SetScript = function() end, Show = function() end }
+        end,
+    }, { __index = _G })
+    environment._G = environment
+    if legacySpells then
+        environment.IsSpellInRange = function()
+            if issecretvalue(state.result) then return state.result end
+            return state.result and 1 or 0
+        end
+    end
+    loadInEnvironment("Libs\\LibRangeCheck-3.0\\LibRangeCheck-3.0.lua", environment)
+    local interaction = lib.friendRC[1]
+    lib:init()
+    local spell, item
+    for _, entry in ipairs(lib.friendNoItemsRC) do
+        if entry.info:find("spell:", 1, true) then spell = entry end
+    end
+    for _, entry in ipairs(lib.friendRC) do
+        if entry.info:find("item:", 1, true) then item = entry end
+    end
+    assert(spell and item and interaction)
+    for _, entry in ipairs({ interaction, spell, item }) do
+        lib.friendRC = { entry }
+        state.result = true
+        local minimum, maximum = lib:GetRange("target", true, nil, 0)
+        equal(minimum, 0)
+        equal(maximum, entry.range)
+        state.result = secret
+        minimum, maximum = lib:GetRange("target", true, nil, 0)
+        equal(minimum, nil)
+        equal(maximum, nil)
+        state.result = false
+        minimum, maximum = lib:GetRange("target", true, nil, 0)
+        equal(minimum, entry.range)
+        equal(maximum, nil)
+    end
+    state.result = true
+    for _, key in ipairs({ "exists", "assist", "attack", "dead", "pet", "visible" }) do
+        local previous = state[key]
+        state[key] = secret
+        local minimum, maximum = lib:GetRange("target", true, nil, 0)
+        equal(minimum, nil)
+        equal(maximum, nil)
+        state[key] = previous
+    end
+    state.guid = nil
+    local minimum = lib:GetRange("target", nil, nil, 0)
+    equal(minimum, 0)
+    state.attack, state.assist, state.pet = true, secret, secret
+    lib.harmRC = { interaction }
+    minimum = lib:GetRange("target", nil, nil, 0)
+    equal(minimum, 0)
+end
+
+test("private library rejects restricted results with C_Spell", function() checkLibrary(false) end)
+test("private library rejects restricted results with legacy spells", function() checkLibrary(true) end)
 
 print("Passed " .. count .. " tests")

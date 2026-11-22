@@ -3,8 +3,12 @@ local _, RangeFinder = ...
 local Range = {}
 RangeFinder.Range = Range
 
+function Range.IsReadable(value)
+    return not (type(issecretvalue) == "function" and issecretvalue(value))
+end
+
 function Range.IsValid(value)
-    return type(value) == "number"
+    return Range.IsReadable(value) and type(value) == "number"
         and value == value
         and value >= 0
         and value < math.huge
@@ -21,7 +25,7 @@ function Range.Approximate(minimum, maximum)
 end
 
 function Range.IsApproximate(value)
-    return type(value) == "table"
+    return Range.IsReadable(value) and type(value) == "table"
         and Range.IsValid(value.minimum)
         and Range.IsValid(value.maximum)
         and value.minimum < value.maximum
@@ -35,8 +39,9 @@ function Range.Above(minimum)
 end
 
 function Range.IsAbove(value)
-    return type(value) == "table"
+    return Range.IsReadable(value) and type(value) == "table"
         and Range.IsValid(value.minimum)
+        and Range.IsReadable(value.maximum)
         and value.maximum == nil
 end
 

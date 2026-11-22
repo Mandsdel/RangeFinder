@@ -39,7 +39,8 @@ License: MIT
 --
 -- @class file
 -- @name LibRangeCheck-3.0
-local MAJOR_VERSION = "LibRangeCheck-3.0"
+-- Keep Forever safety changes isolated from other addons' library versions.
+local MAJOR_VERSION = "RangeFinder-LibRangeCheck-3.0"
 local MINOR_VERSION = 39
 
 ---@class lib
@@ -58,7 +59,20 @@ local isCata = WOW_PROJECT_ID == WOW_PROJECT_CATACLYSM_CLASSIC
 local isMists = WOW_PROJECT_ID == WOW_PROJECT_MISTS_CLASSIC
 local isForever = interfaceVersion >= 16000 and interfaceVersion < 20000
 
-local InCombatLockdownRestriction = function(unit) return InCombatLockdown() and not UnitCanAttack("player", unit) end
+local function isReadable(value)
+  return not (issecretvalue and issecretvalue(value))
+end
+
+local function InCombatLockdownRestriction(unit)
+  if not InCombatLockdown() then
+    return false
+  end
+  local canAttack = UnitCanAttack("player", unit)
+  if not isReadable(canAttack) then
+    return canAttack
+  end
+  return not canAttack
+end
 
 local _G = _G
 local next = next
@@ -84,7 +98,9 @@ local UnitIsDeadOrGhost = UnitIsDeadOrGhost
 local CheckInteractDistance = CheckInteractDistance
 local IsSpellBookItemInRange = _G.IsSpellInRange or function(index, spellBank, unit)
   local result = C_Spell.IsSpellInRange(index, unit)
-  if result == true then
+  if not isReadable(result) then
+    return result
+  elseif result == true then
     return 1
   elseif result == false then
     return 0
@@ -3789,7 +3805,10 @@ local lastUpdate = 0
 local checkers_Spell = setmetatable({}, {
   __index = function(t, spellIdx)
     local func = function(unit)
-      if IsSpellBookItemInRange(spellIdx, BOOKTYPE_SPELL, unit) == 1 then
+      local result = IsSpellBookItemInRange(spellIdx, BOOKTYPE_SPELL, unit)
+      if not isReadable(result) then
+        return result
+      elseif result == 1 then
         return true
       end
     end
@@ -3801,11 +3820,15 @@ local checkers_SpellWithMin = {} -- see getCheckerForSpellWithMinRange()
 local checkers_Item = setmetatable({}, {
   __index = function(t, item)
     local func = function(unit, skipInCombatCheck)
-      if not skipInCombatCheck and InCombatLockdownRestriction(unit) then
-        return nil
-      else
-        return C_Item.IsItemInRange(item, unit) or nil
+      if not skipInCombatCheck then
+        local restricted = InCombatLockdownRestriction(unit)
+        if not isReadable(restricted) then
+          return restricted
+        elseif restricted then
+          return nil
+        end
       end
+      return C_Item.IsItemInRange(item, unit)
     end
     t[item] = func
     return func
@@ -3814,11 +3837,15 @@ local checkers_Item = setmetatable({}, {
 local checkers_Interact = setmetatable({}, {
   __index = function(t, index)
     local func = function(unit, skipInCombatCheck)
-      if not skipInCombatCheck and InCombatLockdownRestriction(unit) then
-        return nil
-      else
-        return CheckInteractDistance(unit, index) and true or false
+      if not skipInCombatCheck then
+        local restricted = InCombatLockdownRestriction(unit)
+        if not isReadable(restricted) then
+          return restricted
+        elseif restricted then
+          return nil
+        end
       end
+      return CheckInteractDistance(unit, index)
     end
     t[index] = func
     return func
@@ -3911,9 +3938,16 @@ local function getCheckerForSpellWithMinRange(spellIdx, minRange, range, spellLi
   local minRangeChecker = findMinRangeChecker(minRange, range, spellList, interactLists)
   if minRangeChecker then
     checker = function(unit)
-      if IsSpellBookItemInRange(spellIdx, BOOKTYPE_SPELL, unit) == 1 then
+      local result = IsSpellBookItemInRange(spellIdx, BOOKTYPE_SPELL, unit)
+      if not isReadable(result) then
+        return result
+      elseif result == 1 then
         return true
-      elseif minRangeChecker(unit) then
+      end
+      local inMinimumRange = minRangeChecker(unit)
+      if not isReadable(inMinimumRange) then
+        return inMinimumRange
+      elseif inMinimumRange then
         return true, true
       end
     end
@@ -4012,7 +4046,10 @@ local function getRangeWithCheckerList(unit, checkerList)
   while lo <= hi do
     local mid = math_floor((lo + hi) / 2)
     local rc = checkerList[mid]
-    if rc.checker(unit, true) then
+    local inRange = rc.checker(unit, true)
+    if not isReadable(inRange) then
+      return nil, nil
+    elseif inRange then
       lo = mid + 1
     else
       hi = mid - 1
@@ -4031,18 +4068,33 @@ end
 
 local function getRange(unit, noItems)
   local canAssist = UnitCanAssist("player", unit)
-  if UnitIsDeadOrGhost(unit) then
+  local isDead = UnitIsDeadOrGhost(unit)
+  local canAttack = UnitCanAttack("player", unit)
+  if not isReadable(isDead) or not isReadable(canAttack) then
+    return nil, nil
+  end
+  local restricted = InCombatLockdown() and not canAttack
+  if isDead then
+    if not isReadable(canAssist) then
+      return nil, nil
+    end
     if canAssist then
-      return getRangeWithCheckerList(unit, InCombatLockdownRestriction(unit) and lib.resRCInCombat or lib.resRC)
+      return getRangeWithCheckerList(unit, restricted and lib.resRCInCombat or lib.resRC)
     else
-      return getRangeWithCheckerList(unit, InCombatLockdownRestriction(unit) and lib.miscRCInCombat or lib.miscRC)
+      return getRangeWithCheckerList(unit, restricted and lib.miscRCInCombat or lib.miscRC)
     end
   end
 
-  if UnitCanAttack("player", unit) then
+  if canAttack then
     return getRangeWithCheckerList(unit, noItems and lib.harmNoItemsRC or lib.harmRC)
-  elseif UnitIsUnit("pet", unit) then
-    if InCombatLockdownRestriction(unit) then
+  end
+
+  local isPet = UnitIsUnit("pet", unit)
+  if not isReadable(isPet) then
+    return nil, nil
+  end
+  if isPet then
+    if restricted then
       local minRange, maxRange = getRangeWithCheckerList(unit, noItems and lib.friendNoItemsRCInCombat or lib.friendRCInCombat)
       if minRange or maxRange then
         return minRange, maxRange
@@ -4057,14 +4109,16 @@ local function getRange(unit, noItems)
         return getRangeWithCheckerList(unit, lib.petRC)
       end
     end
+  elseif not isReadable(canAssist) then
+    return nil, nil
   elseif canAssist then
-    if InCombatLockdownRestriction(unit) then
+    if restricted then
       return getRangeWithCheckerList(unit, noItems and lib.friendNoItemsRCInCombat or lib.friendRCInCombat)
     else
       return getRangeWithCheckerList(unit, noItems and lib.friendNoItemsRC or lib.friendRC)
     end
   else
-    return getRangeWithCheckerList(unit, InCombatLockdownRestriction(unit) and lib.miscRCInCombat or lib.miscRC)
+    return getRangeWithCheckerList(unit, restricted and lib.miscRCInCombat or lib.miscRC)
   end
 end
 
@@ -4076,7 +4130,7 @@ local function getCachedRange(unit, noItems, maxCacheAge)
   -- compose cache key out of unit guid and noItems
   local guid = UnitGUID(unit)
   -- unfortunately, caching on GUID is not possible due to secrets (Midnight, Forever), using unit instead
-  local cacheKey = (issecretvalue(guid) and unit or guid) .. (noItems and "-1" or "-0")
+  local cacheKey = (isReadable(guid) and guid or unit) .. (noItems and "-1" or "-0")
   local cacheItem = rangeCache[cacheKey] or nil
 
   local currentTime = GetTime()
@@ -4456,12 +4510,16 @@ end
 -- local minRange, maxRange = rc:GetRange('target')
 -- local minRangeIfVisible, maxRangeIfVisible = rc:GetRange('target', true)
 function lib:GetRange(unit, checkVisible, noItems, maxCacheAge)
-  if not UnitExists(unit) then
+  local exists = UnitExists(unit)
+  if not isReadable(exists) or not exists then
     return nil
   end
 
-  if checkVisible and not UnitIsVisible(unit) then
-    return nil
+  if checkVisible then
+    local visible = UnitIsVisible(unit)
+    if not isReadable(visible) or not visible then
+      return nil
+    end
   end
 
   return getCachedRange(unit, noItems, maxCacheAge)

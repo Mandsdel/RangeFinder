@@ -1,15 +1,13 @@
 local addonName, RangeFinder = ...
 
 local controller
-local rangeChecker = LibStub("LibRangeCheck-3.0", true)
+local rangeChecker = LibStub("RangeFinder-LibRangeCheck-3.0", true)
 
 local function diagnostic(message)
     print("|cff00bfff" .. addonName .. ":|r " .. message)
 end
 
-local function isReadable(value)
-    return not (type(issecretvalue) == "function" and issecretvalue(value))
-end
+local isReadable = RangeFinder.Range.IsReadable
 
 local function isFiniteNumber(value)
     return isReadable(value) and type(value) == "number"
@@ -54,18 +52,37 @@ local function getDistance()
     end
 
     if not rangeChecker then
-        error("RangeFinder: LibRangeCheck-3.0 failed to load")
+        error("RangeFinder: private LibRangeCheck-3.0 failed to load")
     end
 
     -- A unit-token cache can still contain the previous target when GUIDs are secret.
     local minimum, maximum = rangeChecker:GetRange("target", nil, nil, 0)
-    if minimum and maximum then
+    if RangeFinder.Range.IsValid(minimum) and RangeFinder.Range.IsValid(maximum) then
         return RangeFinder.Range.Approximate(minimum, maximum)
     end
-    if minimum then
+    if RangeFinder.Range.IsValid(minimum) and isReadable(maximum) and maximum == nil then
         return RangeFinder.Range.Above(minimum)
     end
     return nil, "no checked or approximate target range"
+end
+
+local function getThreat()
+    if type(UnitDetailedThreatSituation) ~= "function" then
+        return nil
+    end
+    local isPlayer = UnitIsPlayer("target")
+    if not isReadable(isPlayer) or isPlayer then
+        return nil
+    end
+    local canAttack = UnitCanAttack("player", "target")
+    if not isReadable(canAttack) or not canAttack then
+        return nil
+    end
+
+    local _, _, _, percentage = UnitDetailedThreatSituation("player", "target")
+    if RangeFinder.Range.IsValid(percentage) then
+        return percentage
+    end
 end
 
 local function createOptions()
@@ -139,9 +156,11 @@ frame:SetScript("OnEvent", function(_, event, name)
         controller = RangeFinder.Core.New({
             view = view,
             hasTarget = function()
-                return UnitExists("target")
+                local exists = UnitExists("target")
+                return isReadable(exists) and exists
             end,
             getDistance = getDistance,
+            getThreat = getThreat,
             diagnostic = diagnostic,
         }, RangeFinderDB)
         controller:Initialize()

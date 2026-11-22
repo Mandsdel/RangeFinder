@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: RangeFinder
-## Notes: Displays the checked distance to your current target.
+## Notes: Displays distance and your threat percentage on your current target.
 ## Version: 0.1.0
 ## SavedVariables: RangeFinderDB
 

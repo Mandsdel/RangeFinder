@@ -8,6 +8,7 @@ function Core.New(adapter, saved)
     local controller = {
         adapter = adapter,
         measurement = nil,
+        threat = nil,
         hasTarget = false,
         elapsed = 0,
         initialized = false,
@@ -18,14 +19,16 @@ function Core.New(adapter, saved)
 
     function controller:Render()
         self.display:SetVisible(self.hasTarget)
-        self.display:Render(self.measurement)
+        self.display:Render(self.measurement, self.threat)
     end
 
     function controller:Refresh()
         self.hasTarget = self.adapter.hasTarget()
         self.measurement = nil
+        self.threat = nil
         if self.hasTarget then
             self.measurement = RangeFinder.Range.Read(self.adapter.getDistance)
+            self.threat = self.adapter.getThreat()
         end
         self:Render()
     end
@@ -34,6 +37,7 @@ function Core.New(adapter, saved)
         self.elapsed = 0
         self.hasTarget = self.adapter.hasTarget()
         self.measurement = nil
+        self.threat = nil
         self:Render()
         self:Refresh()
     end
